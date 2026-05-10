@@ -1,0 +1,87 @@
+name: Daily Learning Tracker
+
+on:
+  schedule:
+    # Runs every day at 9:00 PM India time (3:30 PM UTC)
+    - cron: '30 15 * * *'
+  workflow_dispatch: # Also allows manual trigger
+
+jobs:
+  update-readme:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v3
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Count progress stats
+        run: |
+          echo "Counting learning stats..."
+          
+          # Count files
+          NOTES=$(find notes -name "*.md" 2>/dev/null | wc -l)
+          LEETCODE=$(find leetcode -name "*.py" 2>/dev/null | wc -l)
+          BASICS=$(find basics -name "*.py" 2>/dev/null | wc -l)
+          
+          echo "NOTES=$NOTES" >> $GITHUB_ENV
+          echo "LEETCODE=$LEETCODE" >> $GITHUB_ENV
+          echo "BASICS=$BASICS" >> $GITHUB_ENV
+
+      - name: Update README with latest stats
+        run: |
+          python3 << 'EOF'
+          import os
+          from datetime import datetime
+          
+          notes = int(os.environ.get('NOTES', 0))
+          leetcode = int(os.environ.get('LEETCODE', 0))
+          basics = int(os.environ.get('BASICS', 0))
+          today = datetime.now().strftime("%B %d, %Y")
+          
+          stats_section = f"""## 📊 Live Progress Stats
+          
+          | Metric | Count |
+          |--------|-------|
+          | 📅 Days Logged | {notes} |
+          | 🧩 LeetCode Solved | {leetcode} |
+          | 🐍 Python Files Practiced | {basics} |
+          | 📆 Last Updated | {today} |
+          
+          > Auto-updated daily via GitHub Actions
+          """
+          
+          # Read existing README
+          with open('README.md', 'r') as f:
+              content = f.read()
+          
+          # Update or append stats
+          if '## 📊 Live Progress Stats' in content:
+              start = content.find('## 📊 Live Progress Stats')
+              end = content.find('\n## ', start + 1)
+              if end == -1:
+                  content = content[:start] + stats_section
+              else:
+                  content = content[:start] + stats_section + content[end:]
+          else:
+              content = content + '\n\n' + stats_section
+          
+          with open('README.md', 'w') as f:
+              f.write(content)
+          
+          print(f"✅ README updated — Day {notes}, {leetcode} LeetCode problems solved")
+          EOF
+
+      - name: Commit and push README update
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add README.md
+          git diff --staged --quiet || git commit -m "Auto-update: Day ${{ env.NOTES }} stats — $(date +'%Y-%m-%d')"
+          git push
